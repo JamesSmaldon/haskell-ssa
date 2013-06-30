@@ -1,5 +1,9 @@
 import qualified Data.Map as M
 import Control.Monad
+import Control.Monad.Trans.Writer
+import Control.Monad.Trans.Maybe
+import Control.Monad.Random
+import Data.Maybe
 
 -- make things a bit more readable
 type Name = String
@@ -28,6 +32,7 @@ sumPropensities :: [Propensity] -> Propensity
 sumPropensities = foldr (+) 0 
 
 selectReaction' :: [(Reaction, Propensity)] -> Float -> Float -> Maybe Reaction
+selectReaction' _ 0.0 _ = Nothing
 selectReaction' [] target current = Nothing
 selectReaction' ((r,p):xs) target current
                     | next > target = Just r
@@ -43,7 +48,18 @@ calcTimeInc rnum propSum = -log(rnum) / propSum
 react :: System -> Reaction -> System
 react (System m) r = System $ foldr (\x -> M.adjust ((+) 1) x) ((foldr (\x -> M.adjust ((-) 1) x) m (outputs r))) (inputs r)
 
---runSystem :: System -> [Reactions] -> Float -> Writer System
+type RandWriter g a = MaybeT (RandT g (Writer [String])) a
+
+nextReaction :: RandomGen g => System -> [Reaction] -> RandWriter g (System, Float)
+nextReaction s rs = do
+                        let ps = calcPropensities s rs
+                        let propsum = sumPropensities (map snd ps)
+                        tr <- getRandom
+                        let time = calcTimeInc tr propsum
+                        r <- getRandomR (0, propsum)
+                        rct <- return $ selectReaction ps r
+                        return $ (react s (fromJust rct), time)
+
 
 {-c1 = Chemical "A"
 c2 = Chemical "B"

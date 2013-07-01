@@ -51,9 +51,10 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
                         where newInputs = mapadj (flip (-) 1) m (inputs r)
                               mapadj f = foldr (M.adjust f)
 
-type RandWriter g a = MaybeT (RandT g (Writer [String])) a
+type RandWriter g = RandT g (Writer [String]) 
+type MRandWriter g = MaybeT (RandWriter g)
 
-nextReaction :: RandomGen g => System -> [Reaction] -> RandWriter g (System, Float)
+nextReaction :: RandomGen g => System -> [Reaction] -> MRandWriter g (System, Float)
 nextReaction s rs = do
                         let ps = calcPropensities s rs
                         let propsum = sumPropensities (map snd ps)
@@ -61,17 +62,12 @@ nextReaction s rs = do
                         let time = calcTimeInc tr propsum
                         r <- getRandomR (0, propsum)
                         rct <- return $ selectReaction ps r
-                        lift . lift $ tell ["Reaction " ++ show (fromJust rct) ++ " occurred."]
-                        return $ (react s (fromJust rct), time)
+                        return (react s (fromJust rct), time)
 
-{-runSystem :: RandomGen g => (System,Float) -> Float -> [Reaction] -> RandWriter g (System, Float)
+runSystem :: RandomGen g => (System,Float) -> Float -> [Reaction] -> RandWriter g (System, Float)
 runSystem (s, now) end rs
     | now >= end = return (s, end)
-    | otherwise = do 
-                    r <- runMaybeT $ nextReaction s rs
-                    case r of
-                        Just (s', t) -> runSystem (s',t) end rs
-                        Nothing -> return (s, now)
+    | otherwise = runMaybeT (nextReaction s rs) >>= maybe (return (s, now)) (\(s', rt) -> runSystem (s', now+rt) end rs) 
 
 c1 = Chemical "A"
 c2 = Chemical "B"
@@ -80,4 +76,4 @@ r2 = Reaction [c2] [c1] 0.3
 r3 = Reaction [c1,c1] [c2] 0.4
 rs = [r1, r2, r3]
 
-s = System (M.fromList [(c1, 100), (c2, 300)])-}
+s = System (M.fromList [(c1, 100), (c2, 300)])

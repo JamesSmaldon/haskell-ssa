@@ -1,5 +1,6 @@
 import qualified Data.Map as M
 import Control.Monad
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.Writer
 import Control.Monad.Trans.Maybe
 import Control.Monad.Random
@@ -46,7 +47,9 @@ calcTimeInc :: Float -> Float -> Float
 calcTimeInc rnum propSum = -log(rnum) / propSum
 
 react :: System -> Reaction -> System
-react (System m) r = System $ foldr (\x -> M.adjust ((+) 1) x) ((foldr (\x -> M.adjust ((-) 1) x) m (outputs r))) (inputs r)
+react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
+                        where newInputs = mapadj (flip (-) 1) m (inputs r)
+                              mapadj f = foldr (M.adjust f)
 
 type RandWriter g a = MaybeT (RandT g (Writer [String])) a
 
@@ -58,10 +61,19 @@ nextReaction s rs = do
                         let time = calcTimeInc tr propsum
                         r <- getRandomR (0, propsum)
                         rct <- return $ selectReaction ps r
+                        lift . lift $ tell ["Reaction " ++ show (fromJust rct) ++ " occurred."]
                         return $ (react s (fromJust rct), time)
 
+{-runSystem :: RandomGen g => (System,Float) -> Float -> [Reaction] -> RandWriter g (System, Float)
+runSystem (s, now) end rs
+    | now >= end = return (s, end)
+    | otherwise = do 
+                    r <- runMaybeT $ nextReaction s rs
+                    case r of
+                        Just (s', t) -> runSystem (s',t) end rs
+                        Nothing -> return (s, now)
 
-{-c1 = Chemical "A"
+c1 = Chemical "A"
 c2 = Chemical "B"
 r1 = Reaction [c1] [c2] 0.1
 r2 = Reaction [c2] [c1] 0.3

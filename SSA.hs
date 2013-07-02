@@ -1,9 +1,12 @@
 import qualified Data.Map as M
 import Control.Monad
+import Control.Monad.Loops
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Writer
 import Control.Monad.Trans.Maybe
 import Control.Monad.Random
+import Control.Applicative
+import Debug.Trace
 import Data.Maybe
 
 -- make things a bit more readable
@@ -22,7 +25,7 @@ getMap :: System -> M.Map Chemical Count
 getMap (System map) = map
 
 calcPropensity :: System -> Reaction -> Propensity
-calcPropensity (System cmap) r = fromIntegral iprod * rate r
+calcPropensity (System cmap) r = (fromIntegral iprod) * rate r
                                     where f = \i c -> c * M.findWithDefault 0 i cmap
                                           iprod = foldr f 1 (inputs r)
 
@@ -44,7 +47,7 @@ selectReaction :: [(Reaction, Propensity)] -> Float -> Maybe Reaction
 selectReaction rps s = selectReaction' rps s 0.0
 
 calcTimeInc :: Float -> Float -> Float 
-calcTimeInc rnum propSum = -log(rnum) / propSum
+calcTimeInc propSum rnum = -log(rnum) / propSum
 
 react :: System -> Reaction -> System
 react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
@@ -54,26 +57,26 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
 type RandWriter g = RandT g (Writer [String]) 
 type MRandWriter g = MaybeT (RandWriter g)
 
-nextReaction :: RandomGen g => System -> [Reaction] -> MRandWriter g (System, Float)
+nextReaction :: RandomGen g => System -> [Reaction] -> MaybeT (Rand g) (Reaction, Float)
 nextReaction s rs = do
                         let ps = calcPropensities s rs
                         let propsum = sumPropensities (map snd ps)
-                        tr <- getRandom
-                        let time = calcTimeInc tr propsum
-                        r <- getRandomR (0, propsum)
-                        rct <- return $ selectReaction ps r
-                        return (react s (fromJust rct), time)
+                        -- lift selectReaction into the Rand monad (returns Maybe (Reaction))
+                        rct <- MaybeT $ liftM (selectReaction ps) (getRandomR (0, propsum))
+                        -- lift calcTimeInce into the Rand Monad
+                        time <- liftM (calcTimeInc propsum) getRandom
+                        -- Use maybe as an applicative to construct a tuple
+                        return (rct, time)
 
-runSystem :: RandomGen g => (System,Float) -> Float -> [Reaction] -> RandWriter g (System, Float)
-runSystem (s, now) end rs
-    | now >= end = return (s, end)
-    | otherwise = runMaybeT (nextReaction s rs) >>= maybe (return (s, now)) (\(s', rt) -> runSystem (s', now+rt) end rs) 
+runSystem :: RandomGen g => (System, Float) -> Float -> [Reaction] -> MaybeT (Rand g) (System, Float)
+runSystem (s, now) end rs 
+                    | now >= end = MaybeT $ return Nothing
+                    | otherwise = nextReaction s rs >>= \(r, next) -> runSystem (react s r, now+next) end rs
 
 c1 = Chemical "A"
 c2 = Chemical "B"
 r1 = Reaction [c1] [c2] 0.1
 r2 = Reaction [c2] [c1] 0.3
-r3 = Reaction [c1,c1] [c2] 0.4
-rs = [r1, r2, r3]
+rs = [r1, r2]
 
 s = System (M.fromList [(c1, 100), (c2, 300)])

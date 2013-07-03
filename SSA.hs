@@ -69,9 +69,9 @@ nextReaction s rs = do
                         -- Use maybe as an applicative to construct a tuple
                         return $ pure (,) <*> rct <*> Just time
 
-test :: RandomGen g => Maybe (Reaction, Float) -> StateT (System, Float) (RandT g (Writer [String])) Bool
-test Nothing = return False
-test (Just (rct, next)) = do
+runReaction :: RandomGen g => Maybe (Reaction, Float) -> StateT (System, Float) (RandT g (Writer [String])) Bool
+runReaction Nothing = return False
+runReaction (Just (rct, next)) = do
                             (s, now) <- get 
                             put (react s rct, now + next)
                             return True
@@ -80,7 +80,7 @@ runSystem :: RandomGen g => Float -> [Reaction] -> StateT (System, Float) (RandT
 runSystem end rs = do
                         (s, now) <- get
                         rct <- nextReaction s rs
-                        rctHappened <- test rct
+                        rctHappened <- runReaction rct
                         (s', next) <- get
                         return $ rctHappened && next < end
 

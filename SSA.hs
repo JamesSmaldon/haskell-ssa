@@ -52,6 +52,19 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
 
 type STW g = StateT (System, Float) (RandT g (Writer [String]))
 
+nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Float)
+nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps rnum1 <*> pure (calcTimeInc propSum rnum2)
+                                    where ps = calcPropensities s rs
+                                          propSum = sumPropensities (map snd ps)
+
+runReaction' :: (System, Float) -> Maybe (Reaction, Float) -> Maybe (System, Float)
+runReaction' (s, now) Nothing = Nothing
+runReaction' (s, now) (Just (r, deltat)) = Just (react s r, now + deltat)
+
+runSystem' :: (System, Float) -> [Reaction] -> Float -> Float -> Maybe (System, Float)
+runSystem' st@(s, now) rs rnum1 rnum2 = (liftM doReaction) . (nextReaction' rs rnum1 rnum2) $ s
+                                            where doReaction (r, deltat) = (react s r, now + deltat)
+
 nextReaction :: RandomGen g => System -> [Reaction] -> STW g (Maybe (Reaction, Float))
 nextReaction s rs = do
                         let ps = calcPropensities s rs
@@ -78,7 +91,7 @@ runSystem end rs = do
                         (s', next) <- get
                         return $ rctHappened && next < end
 
-runSystem' end rs = iterateUntil ((==) False) (runSystem end rs)
+runSystem'' end rs = iterateUntil ((==) False) (runSystem end rs)
                         
 
 c1 = Chemical "A"

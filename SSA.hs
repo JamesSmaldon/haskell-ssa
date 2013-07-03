@@ -62,7 +62,7 @@ runReaction' (s, now) Nothing = Nothing
 runReaction' (s, now) (Just (r, deltat)) = Just (react s r, now + deltat)
 
 runSystem' :: (System, Float) -> [Reaction] -> Float -> Float -> Maybe (System, Float)
-runSystem' st@(s, now) rs rnum1 rnum2 = (liftM doReaction) . (nextReaction' rs rnum1 rnum2) $ s
+runSystem' st@(s, now) rs rnum1 rnum2 = liftM doReaction . nextReaction' rs rnum1 rnum2 $ s
                                             where doReaction (r, deltat) = (react s r, now + deltat)
 
 nextReaction :: RandomGen g => System -> [Reaction] -> STW g (Maybe (Reaction, Float))

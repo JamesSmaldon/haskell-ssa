@@ -55,10 +55,9 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
                         where newInputs = mapadj (flip (-) 1) m (inputs r)
                               mapadj f = foldr (M.adjust f)
 
-type RandWriter g = RandT g (Writer [String]) 
-type MRandWriter g = MaybeT (RandWriter g)
+type STW g = StateT (System, Float) (RandT g (Writer [String]))
 
-nextReaction :: RandomGen g => System -> [Reaction] -> StateT (System, Float) (RandT g (Writer [String])) (Maybe (Reaction, Float))
+nextReaction :: RandomGen g => System -> [Reaction] -> STW g (Maybe (Reaction, Float))
 nextReaction s rs = do
                         let ps = calcPropensities s rs
                         let propsum = sumPropensities (map snd ps)
@@ -69,14 +68,14 @@ nextReaction s rs = do
                         -- Use maybe as an applicative to construct a tuple
                         return $ pure (,) <*> rct <*> Just time
 
-runReaction :: RandomGen g => Maybe (Reaction, Float) -> StateT (System, Float) (RandT g (Writer [String])) Bool
+runReaction :: RandomGen g => Maybe (Reaction, Float) -> STW g Bool
 runReaction Nothing = return False
 runReaction (Just (rct, next)) = do
                             (s, now) <- get 
                             put (react s rct, now + next)
                             return True
 
-runSystem :: RandomGen g => Float -> [Reaction] -> StateT (System, Float) (RandT g (Writer [String])) Bool
+runSystem :: RandomGen g => Float -> [Reaction] -> STW g Bool
 runSystem end rs = do
                         (s, now) <- get
                         rct <- nextReaction s rs

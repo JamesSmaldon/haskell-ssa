@@ -1,4 +1,5 @@
 import qualified Data.Map as M
+import Data.List
 import Control.Monad
 import Control.Monad.Loops
 import Control.Monad.Trans.Class
@@ -36,16 +37,10 @@ calcPropensities s rs = zip rs $ fmap (calcPropensity s) rs
 sumPropensities :: [Propensity] -> Propensity
 sumPropensities = foldr (+) 0 
 
-selectReaction' :: [(Reaction, Propensity)] -> Float -> Float -> Maybe Reaction
-selectReaction' _ 0.0 _ = Nothing
-selectReaction' [] target current = Nothing
-selectReaction' ((r,p):xs) target current
-                    | next > target = Just r
-                    | otherwise = selectReaction' xs target next
-                        where next = current + p
-
 selectReaction :: [(Reaction, Propensity)] -> Float -> Maybe Reaction
-selectReaction rps s = selectReaction' rps s 0.0
+selectReaction rps target = liftM fst . find gtTarget . scanl1 sumTuple $ rps 
+                                where sumTuple (a,b) (c,d) = (c, d+b)
+                                      gtTarget (_, x) = x > target
 
 calcTimeInc :: Float -> Float -> Float 
 calcTimeInc propSum rnum = -log(rnum) / propSum

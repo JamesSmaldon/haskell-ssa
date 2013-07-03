@@ -4,6 +4,7 @@ import Control.Monad.Loops
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Writer
 import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State
 import Control.Monad.Random
 import Control.Applicative
 import Debug.Trace
@@ -57,21 +58,34 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
 type RandWriter g = RandT g (Writer [String]) 
 type MRandWriter g = MaybeT (RandWriter g)
 
-nextReaction :: RandomGen g => System -> [Reaction] -> MaybeT (Rand g) (Reaction, Float)
+nextReaction :: RandomGen g => System -> [Reaction] -> StateT (System, Float) (RandT g (Writer [String])) (Maybe (Reaction, Float))
 nextReaction s rs = do
                         let ps = calcPropensities s rs
                         let propsum = sumPropensities (map snd ps)
                         -- lift selectReaction into the Rand monad (returns Maybe (Reaction))
-                        rct <- MaybeT $ liftM (selectReaction ps) (getRandomR (0, propsum))
+                        rct <- liftM (selectReaction ps) (getRandomR (0, propsum))
                         -- lift calcTimeInce into the Rand Monad
                         time <- liftM (calcTimeInc propsum) getRandom
                         -- Use maybe as an applicative to construct a tuple
-                        return (rct, time)
+                        return $ pure (,) <*> rct <*> Just time
 
-runSystem :: RandomGen g => (System, Float) -> Float -> [Reaction] -> MaybeT (Rand g) (System, Float)
-runSystem (s, now) end rs 
-                    | now >= end = MaybeT $ return Nothing
-                    | otherwise = nextReaction s rs >>= \(r, next) -> runSystem (react s r, now+next) end rs
+test :: RandomGen g => Maybe (Reaction, Float) -> StateT (System, Float) (RandT g (Writer [String])) Bool
+test Nothing = return False
+test (Just (rct, next)) = do
+                            (s, now) <- get 
+                            put (react s rct, now + next)
+                            return True
+
+runSystem :: RandomGen g => Float -> [Reaction] -> StateT (System, Float) (RandT g (Writer [String])) Bool
+runSystem end rs = do
+                        (s, now) <- get
+                        rct <- nextReaction s rs
+                        rctHappened <- test rct
+                        (s', next) <- get
+                        return $ rctHappened && next < end
+
+runSystem' end rs = iterateUntil ((==) False) (runSystem end rs)
+                        
 
 c1 = Chemical "A"
 c2 = Chemical "B"

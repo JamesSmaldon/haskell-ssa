@@ -57,13 +57,16 @@ nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps rnum1 <*> pure (
                                     where ps = calcPropensities s rs
                                           propSum = sumPropensities (map snd ps)
 
-runReaction' :: (System, Float) -> Maybe (Reaction, Float) -> Maybe (System, Float)
-runReaction' (s, now) Nothing = Nothing
-runReaction' (s, now) (Just (r, deltat)) = Just (react s r, now + deltat)
+runSystem' :: (System, Float) -> [Reaction] -> Float -> Float -> Float -> Maybe (System, Float)
+runSystem' st@(s, now) rs end rnum1 rnum2 = return s >>= (nextReaction' rs rnum1 rnum2) >>= doReaction --doReaction . nextReaction' rs rnum1 rnum2 $ s
+                                                where doReaction (r, deltat) = if (now + deltat) <= end 
+                                                                                    then Just (react s r, now + deltat) 
+                                                                                    else Nothing
 
-runSystem' :: (System, Float) -> [Reaction] -> Float -> Float -> Maybe (System, Float)
-runSystem' st@(s, now) rs rnum1 rnum2 = liftM doReaction . nextReaction' rs rnum1 rnum2 $ s
-                                            where doReaction (r, deltat) = (react s r, now + deltat)
+runSystem''' :: RandomGen g =>  [Reaction] -> Float -> Maybe (System, Float) -> Rand g (Maybe (System, Float))
+runSystem''' _ _ Nothing = return $ Nothing
+runSystem''' rs stopTime (Just start) = liftM2 (runSystem' start rs stopTime) getRandom getRandom >>= (runSystem''' rs stopTime)
+
 
 nextReaction :: RandomGen g => System -> [Reaction] -> STW g (Maybe (Reaction, Float))
 nextReaction s rs = do

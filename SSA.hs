@@ -15,6 +15,8 @@ import Data.Maybe
 type Name = String
 type Count = Int
 type Propensity = Float
+type PropensitySum = Float
+type Time = Float
 
 data Chemical = Chemical Name deriving (Show, Ord, Eq)
 data Reaction = Reaction { inputs :: [Chemical], outputs :: [Chemical], rate :: Float } deriving (Show)
@@ -37,12 +39,12 @@ calcPropensities s rs = zip rs $ fmap (calcPropensity s) rs
 sumPropensities :: [Propensity] -> Propensity
 sumPropensities = foldr (+) 0 
 
-selectReaction :: [(Reaction, Propensity)] -> Float -> Maybe Reaction
+selectReaction :: [(Reaction, Propensity)] -> PropensitySum -> Maybe Reaction
 selectReaction rps target = liftM fst . find gtTarget . scanl1 sumTuple $ rps 
                                 where sumTuple (a,b) (c,d) = (c, d+b)
                                       gtTarget (_, x) = x > target
 
-calcTimeInc :: Float -> Float -> Float 
+calcTimeInc :: PropensitySum -> Float -> Time
 calcTimeInc propSum rnum = -log(rnum) / propSum
 
 react :: System -> Reaction -> System
@@ -50,52 +52,27 @@ react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
                         where newInputs = mapadj (flip (-) 1) m (inputs r)
                               mapadj f = foldr (M.adjust f)
 
-type STW g = StateT (System, Float) (RandT g (Writer [String]))
-
-nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Float)
+nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Time)
 nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps rnum1 <*> pure (calcTimeInc propSum rnum2)
                                     where ps = calcPropensities s rs
                                           propSum = sumPropensities (map snd ps)
 
-runSystem' :: (System, Float) -> [Reaction] -> Float -> Float -> Float -> Maybe (System, Float)
-runSystem' st@(s, now) rs end rnum1 rnum2 = return s >>= (nextReaction' rs rnum1 rnum2) >>= doReaction --doReaction . nextReaction' rs rnum1 rnum2 $ s
+doNextReaction :: (System, Time) -> [Reaction] -> Time -> Float -> Float -> Maybe (System, Time)
+doNextReaction st@(s, now) rs end rnum1 rnum2 = return s >>= (nextReaction' rs rnum1 rnum2) >>= doReaction
                                                 where doReaction (r, deltat) = if (now + deltat) <= end 
                                                                                     then Just (react s r, now + deltat) 
                                                                                     else Nothing
 
-runSystem''' :: RandomGen g =>  [Reaction] -> Float -> Maybe (System, Float) -> Rand g (Maybe (System, Float))
-runSystem''' _ _ Nothing = return $ Nothing
-runSystem''' rs stopTime (Just start) = liftM2 (runSystem' start rs stopTime) getRandom getRandom >>= (runSystem''' rs stopTime)
-
-
-nextReaction :: RandomGen g => System -> [Reaction] -> STW g (Maybe (Reaction, Float))
-nextReaction s rs = do
-                        let ps = calcPropensities s rs
-                        let propsum = sumPropensities (map snd ps)
-                        -- lift selectReaction into the Rand monad (returns Maybe (Reaction))
-                        rct <- liftM (selectReaction ps) (getRandomR (0, propsum))
-                        -- lift calcTimeInce into the Rand Monad
-                        time <- liftM (calcTimeInc propsum) getRandom
-                        -- Use maybe as an applicative to construct a tuple
-                        return $ pure (,) <*> rct <*> Just time
-
-runReaction :: RandomGen g => Maybe (Reaction, Float) -> STW g Bool
-runReaction Nothing = return False
-runReaction (Just (rct, next)) = do
-                            (s, now) <- get 
-                            put (react s rct, now + next)
-                            return True
-
-runSystem :: RandomGen g => Float -> [Reaction] -> STW g Bool
-runSystem end rs = do
-                        (s, now) <- get
-                        rct <- nextReaction s rs
-                        rctHappened <- runReaction rct
-                        (s', next) <- get
-                        return $ rctHappened && next < end
-
-runSystem'' end rs = iterateUntil ((==) False) (runSystem end rs)
-                        
+run :: RandomGen g => (System, Float) -> [Reaction] -> Time -> Rand g [(System, Time)]
+run st rs stopTime = do
+                        r1 <- getRandom
+                        r2 <- getRandom
+                        newSys <- return $ doNextReaction st rs stopTime r1 r2
+                        if isJust newSys then
+                            let newSys' = fromJust newSys in 
+                                liftM2 (:) (return newSys') (run newSys' rs stopTime)
+                        else
+                            return []
 
 c1 = Chemical "A"
 c2 = Chemical "B"

@@ -22,22 +22,13 @@ data Chemical = Chemical Name deriving (Show, Ord, Eq)
 data Reaction = Reaction { inputs :: [Chemical], outputs :: [Chemical], rate :: Float } deriving (Show)
 data System = System (M.Map Chemical Count) deriving (Show)
 
-modSystem :: System -> (M.Map Chemical Count -> M.Map Chemical Count) -> System
-modSystem (System map) f = System (f map)
-
-getMap :: System -> M.Map Chemical Count
-getMap (System map) = map
-
 calcPropensity :: System -> Reaction -> Propensity
-calcPropensity (System cmap) r = (fromIntegral iprod) * rate r
-                                    where f = \i c -> c * M.findWithDefault 0 i cmap
+calcPropensity (System cmap) r = fromIntegral iprod * rate r
+                                    where f i c = c * M.findWithDefault 0 i cmap
                                           iprod = foldr f 1 (inputs r)
 
 calcPropensities :: System -> [Reaction] -> [(Reaction, Propensity)]
 calcPropensities s rs = zip rs $ fmap (calcPropensity s) rs
-
-sumPropensities :: [Propensity] -> Propensity
-sumPropensities = foldr (+) 0 
 
 selectReaction :: [(Reaction, Propensity)] -> PropensitySum -> Maybe Reaction
 selectReaction rps target = liftM fst . find gtTarget . scanl1 sumTuple $ rps 
@@ -45,34 +36,28 @@ selectReaction rps target = liftM fst . find gtTarget . scanl1 sumTuple $ rps
                                       gtTarget (_, x) = x > target
 
 calcTimeInc :: PropensitySum -> Float -> Time
-calcTimeInc propSum rnum = -log(rnum) / propSum
+calcTimeInc propSum rnum = -log rnum / propSum
 
 react :: System -> Reaction -> System
-react (System m) r = System $ mapadj (flip (+) 1) newInputs (outputs r)
-                        where newInputs = mapadj (flip (-) 1) m (inputs r)
+react (System m) r = System $ mapadj (+ 1) newInputs (outputs r)
+                        where newInputs = mapadj pred m (inputs r)
                               mapadj f = foldr (M.adjust f)
 
 nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Time)
 nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps rnum1 <*> pure (calcTimeInc propSum rnum2)
                                     where ps = calcPropensities s rs
-                                          propSum = sumPropensities (map snd ps)
+                                          propSum = sum (map snd ps)
 
 doNextReaction :: (System, Time) -> [Reaction] -> Time -> Float -> Float -> Maybe (System, Time)
-doNextReaction st@(s, now) rs end rnum1 rnum2 = return s >>= (nextReaction' rs rnum1 rnum2) >>= doReaction
+doNextReaction st@(s, now) rs end rnum1 rnum2 = nextReaction' rs rnum1 rnum2 s >>= doReaction
                                                 where doReaction (r, deltat) = if (now + deltat) <= end 
                                                                                     then Just (react s r, now + deltat) 
                                                                                     else Nothing
 
 run :: RandomGen g => (System, Float) -> [Reaction] -> Time -> Rand g [(System, Time)]
-run st rs stopTime = do
-                        r1 <- getRandom
-                        r2 <- getRandom
-                        newSys <- return $ doNextReaction st rs stopTime r1 r2
-                        if isJust newSys then
-                            let newSys' = fromJust newSys in 
-                                liftM2 (:) (return newSys') (run newSys' rs stopTime)
-                        else
-                            return []
+run st rs stopTime = liftM2 doNextReaction' getRandom getRandom >>= stopIfNoReaction
+                        where stopIfNoReaction = maybe (return []) (\x -> liftM2 (:) (return x) (run x rs stopTime))
+                              doNextReaction' = doNextReaction st rs stopTime
 
 c1 = Chemical "A"
 c2 = Chemical "B"

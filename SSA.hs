@@ -39,7 +39,7 @@ react (System m) r = System $ mapadj (+ 1) newInputs (outputs r)
                               mapadj f = foldr (M.adjust f)
 
 nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Time)
-nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps rnum1 <*> pure (calcTimeInc propSum rnum2)
+nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps (rnum1 * propSum) <*> pure (calcTimeInc propSum rnum2)
                                     where ps = calcPropensities s rs
                                           propSum = sum (map snd ps)
 
@@ -68,5 +68,5 @@ s = System (M.fromList [(c1, 100), (c2, 300)])
 
 main :: IO ()
 main = do 
-        let output = tabulateOutput $ evalRand (run (s, 0.0) rs 10.0) (mkStdGen 1)
+        let output = tabulateOutput $ evalRand (run (s, 0.0) rs 100.0) (mkStdGen 1)
         putStr output

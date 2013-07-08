@@ -1,14 +1,9 @@
 import qualified Data.Map as M
 import Data.List
 import Control.Monad
-import Control.Monad.Loops
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.Writer
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.State
 import Control.Monad.Random
-import Control.Applicative
 import Debug.Trace
+import Control.Applicative
 import Data.Maybe
 
 -- make things a bit more readable

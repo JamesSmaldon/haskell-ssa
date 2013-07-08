@@ -49,10 +49,14 @@ doNextReaction st@(s, now) rs end rnum1 rnum2 = nextReaction' rs rnum1 rnum2 s >
                                                                                     then Just (react s r, now + deltat) 
                                                                                     else Nothing
 
-run :: RandomGen g => (System, Float) -> [Reaction] -> Time -> Rand g [(System, Time)]
+run :: RandomGen g => (System, Time) -> [Reaction] -> Time -> Rand g [(System, Time)]
 run st rs stopTime = liftM2 doNextReaction' getRandom getRandom >>= stopIfNoReaction
                         where stopIfNoReaction = maybe (return []) (\x -> liftM2 (:) (return x) (run x rs stopTime))
                               doNextReaction' = doNextReaction st rs stopTime
+
+tabulateOutput :: [(System, Time)] -> String
+tabulateOutput = unlines . (map $ show . M.toList . getCounts . fst)
+                    where getCounts (System m) = m
 
 c1 = Chemical "A"
 c2 = Chemical "B"
@@ -61,3 +65,8 @@ r2 = Reaction [c2] [c1] 0.3
 rs = [r1, r2]
 
 s = System (M.fromList [(c1, 100), (c2, 300)])
+
+main :: IO ()
+main = do 
+        let output = tabulateOutput $ evalRand (run (s, 0.0) rs 10.0) (mkStdGen 1)
+        putStr output

@@ -9,18 +9,30 @@ import Data.Maybe
 -- make things a bit more readable
 type Name = String
 type Count = Int
+type Rate = Float
 type Propensity = Float
 type PropensitySum = Float
 type Time = Float
+type Input = Chemical
+type Output = Chemical
 
 data Chemical = Chemical Name deriving (Show, Ord, Eq)
-data Reaction = Reaction { inputs :: [Chemical], outputs :: [Chemical], rate :: Float } deriving (Show)
+data Reaction = ZeroOrd Rate Output | 
+                    FstOrd Rate Input Output |
+                    SndOrd Rate Input Input Output | 
+                    Assoc Rate Input Output | 
+                    Disassoc Rate Input Output deriving (Show)
+
 data System = System (M.Map Chemical Count) deriving (Show)
 
+inputCount i m = M.findWithDefault 0 i m
+
 calcPropensity :: System -> Reaction -> Propensity
-calcPropensity (System cmap) r = fromIntegral iprod * rate r
-                                    where f i c = c * M.findWithDefault 0 i cmap
-                                          iprod = foldr f 1 (inputs r)
+calcPropensity _ (ZeroOrd r _) = r
+calcPropensity (System m) (FstOrd r i _) = r * (fromIntegral $ inputCount i m)
+calcPropensity (System m) (SndOrd r i1 i2 _) = r * (fromIntegral $ inputCount i1 m * inputCount i2 m)
+calcPropensity (System m) (Assoc r i _) = let c = inputCount i m in r * (fromIntegral $ c * (c-1))
+calcPropensity (System m) (Disassoc r i _) = r * (fromIntegral $ inputCount i m)
 
 calcPropensities :: System -> [Reaction] -> [(Reaction, Propensity)]
 calcPropensities s rs = zip rs $ fmap (calcPropensity s) rs
@@ -33,10 +45,15 @@ selectReaction rps target = liftM fst . find gtTarget . scanl1 sumTuple $ rps
 calcTimeInc :: PropensitySum -> Float -> Time
 calcTimeInc propSum rnum = -log rnum / propSum
 
+mapadj f = M.adjust f
+
 react :: System -> Reaction -> System
-react (System m) r = System $ mapadj (+ 1) newInputs (outputs r)
-                        where newInputs = mapadj pred m (inputs r)
-                              mapadj f = foldr (M.adjust f)
+react (System m) (ZeroOrd _ o) = System $ mapadj succ o m
+react (System m) (FstOrd _ i o) = System $ mapadj succ o (mapadj pred i m) 
+react (System m) (SndOrd r i1 i2 o) = System $ mapadj succ o (mapadj pred i2 (mapadj pred i1 m))
+react (System m) (Assoc r i o) = System $ mapadj (succ.succ) o (mapadj (pred.pred) i m) 
+react (System m) (Disassoc r i o) = react (System m) (Assoc r o i)
+
 
 nextReaction' :: [Reaction] -> Float -> Float -> System -> Maybe (Reaction, Time)
 nextReaction' rs rnum1 rnum2 s = pure (,) <*> selectReaction ps (rnum1 * propSum) <*> pure (calcTimeInc propSum rnum2)
@@ -60,8 +77,8 @@ tabulateOutput = unlines . (map $ show . M.toList . getCounts . fst)
 
 c1 = Chemical "A"
 c2 = Chemical "B"
-r1 = Reaction [c1] [c2] 0.1
-r2 = Reaction [c2] [c1] 0.3
+r1 = FstOrd 0.5 c1 c2
+r2 = FstOrd 0.1 c2 c1
 rs = [r1, r2]
 
 s = System (M.fromList [(c1, 100), (c2, 300)])

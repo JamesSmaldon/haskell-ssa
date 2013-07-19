@@ -78,9 +78,9 @@ run st rs stopTime = liftM2 doNextReaction' getRandom getRandom >>= stopIfNoReac
                               doNextReaction' = doNextReaction st rs stopTime
 
 namedTimeSeries :: [(System, Time)] -> [(Chemical, [(Time, Double)])]
-namedTimeSeries xs = M.toList $ foldr addTimes M.empty xs
-                       where addTimes (System m, time) m2 = foldr (insertDataPt time) m2 (M.toList m)   
-                             insertDataPt time (chem, cnt)  = M.insertWith (++) chem [(time, fromIntegral cnt)] 
+namedTimeSeries xs = M.toList $ foldl' addTimes M.empty xs
+                       where addTimes m2 (System m, time) = foldl' (insertDataPt time) m2 (M.toList m)   
+                             insertDataPt time m3 (chem, cnt)  = M.insertWith (++) chem [(time, fromIntegral cnt)] m3
 
 
 
@@ -89,27 +89,25 @@ createPlotLines xs cols = map createPlotLine $ zip xs cols
                 where createPlotLine ((Chemical n, ts),col) = Left $ toPlot $ plot_lines_style .> line_color ^= col
                                                            $ plot_lines_values ^= [ts]
                                                            $ plot_lines_title ^= n 
-                                                           $ defaultPlotLines
+                                                           $ defaultPlotLines 
 
 c1 = Chemical "A"
 c2 = Chemical "B"
 c3 = Chemical "C"
 r1 = FstOrd 0.5 c1 c2
-r2 = FstOrd 0.1 c2 c1
-r3 = SndOrd 0.2 c1 c2 c3
-r4 = FstOrd 0.1 c3 c1
-rs = [r1, r2, r3, r4]
+r2 = FstOrd 0.5 c2 c1
+rs = [r1, r2]
 
-s = System (M.fromList [(c1, 300), (c2, 0), (c3, 0)])
+s = System (M.fromList [(c1, 300), (c2, 0)])
 
 chart nts = layout 
   where
     layout = layout1_title ^="SSA"
-           $ layout1_plots ^= createPlotLines nts [opaque blue, opaque green, opaque red]
+           $ layout1_plots ^= createPlotLines nts [opaque blue, opaque green]
            $ layout1_grid_last ^= False
            $ defaultLayout1
 
 main :: IO ()
 main = do 
-        let output = namedTimeSeries $ evalRand (run (s, 0.0) rs 100.0) (mkStdGen 1)
+        let output = namedTimeSeries $ evalRand (run (s, 0.0) rs 10000.0) (mkStdGen 1)
         renderableToWindow (toRenderable $ chart output) 640 480
